@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Misterio Cartesiano: Edición Mundial</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@400;700&display=swap');
+
+        body {
+            font-family: 'Nunito', sans-serif;
+            background-color: #f0fdf4; /* Fondo verde muy claro */
+            color: #1f2937;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            min-height: 100vh;
+            margin: 0;
+            padding: 1rem;
+            touch-action: manipulation; /* Mejorar respuesta táctil */
+        }
+
+        h1 {
+            font-family: 'Fredoka One', cursive;
+            color: #047857; /* Verde oscuro estilo cancha */
+            text-align: center;
+            font-size: 1.8rem;
+            margin-bottom: 0.2rem;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
+        }
+
+        .instruction-box {
+            background-color: white;
+            border-radius: 12px;
+            padding: 1rem;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            margin-bottom: 1rem;
+            width: 100%;
+            max-width: 400px;
+            text-align: center;
+            border: 2px solid #bfdbfe;
+        }
+
+        .target-coord {
+            font-family: 'Fredoka One', cursive;
+            font-size: 2rem;
+            color: #2563eb;
+            letter-spacing: 2px;
+            margin: 0.5rem 0;
+        }
+
+        .feedback-text {
+            min-height: 1.5rem;
+            font-weight: bold;
+            color: #ef4444; /* Rojo para errores */
+            font-size: 0.9rem;
+            transition: opacity 0.3s;
+        }
+
+        #canvas-container {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+            overflow: hidden;
+            border: 2px solid #cbd5e1;
+            /* touch-action: none evita que la pantalla haga scroll al tocar el canvas */
+            touch-action: none; 
+        }
+
+        canvas {
+            display: block;
+        }
+
+        button {
+            font-family: 'Fredoka One', cursive;
+            background-color: #eab308; /* Amarillo/Dorado */
+            color: white;
+            border: none;
+            padding: 0.75rem 2rem;
+            font-size: 1.1rem;
+            border-radius: 50px;
+            margin-top: 1.5rem;
+            cursor: pointer;
+            box-shadow: 0 4px 6px rgba(234, 179, 8, 0.3);
+            transition: transform 0.1s, background-color 0.2s;
+        }
+
+        button:active {
+            transform: translateY(2px);
+            box-shadow: 0 2px 4px rgba(234, 179, 8, 0.3);
+        }
+        
+        button:hover {
+            background-color: #ca8a04;
+        }
+
+        /* Animación para el final */
+        .celebrate {
+            animation: pop 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
+        }
+
+        @keyframes pop {
+            0% { transform: scale(0.8); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+    </style>
+</head>
+<body>
+
+    <h1>Misterio Cartesiano</h1>
+    <p class="text-sm text-gray-500 font-bold mb-4 text-center tracking-wide">Prof. Andrés Durán</p>
+    
+    <div class="instruction-box">
+        <p class="text-gray-600 text-sm font-bold uppercase tracking-wide">Encuentra el punto:</p>
+        <div id="targetDisplay" class="target-coord">(0, 0)</div>
+        <p class="text-xs text-gray-500 mb-1">Primero eje X (horizontal) ↔️, luego eje Y (vertical) ↕️</p>
+        <div id="feedbackDisplay" class="feedback-text opacity-0"></div>
+    </div>
+
+    <div id="canvas-container">
+        <canvas id="gameCanvas"></canvas>
+    </div>
+
+    <button id="restartBtn" style="display: none;" onclick="initGame()">¡Jugar de Nuevo!</button>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const targetDisplay = document.getElementById('targetDisplay');
+        const feedbackDisplay = document.getElementById('feedbackDisplay');
+        const restartBtn = document.getElementById('restartBtn');
+
+        // Configuración de la figura a descubrir (Silueta de la Copa del Mundo)
+        const shapePoints = [
+            {x: -3, y: -8}, // Base inferior izquierda
+            {x: 3, y: -8},  // Base inferior derecha
+            {x: 2, y: -6},  // Escalón base derecho
+            {x: 1, y: -5},  // Cintura derecha
+            {x: 2, y: -2},  // Curva cuerpo derecho
+            {x: 3, y: 1},   // Hombro derecho
+            {x: 2, y: 3},   // Base globo terráqueo derecha
+            {x: 3, y: 5},   // Ecuador globo derecha
+            {x: 2, y: 7},   // Globo superior derecha
+            {x: 0, y: 8},   // Cima del globo (Centro)
+            {x: -2, y: 7},  // Globo superior izquierda
+            {x: -3, y: 5},  // Ecuador globo izquierda
+            {x: -2, y: 3},  // Base globo terráqueo izquierda
+            {x: -3, y: 1},  // Hombro izquierdo
+            {x: -2, y: -2}, // Curva cuerpo izquierdo
+            {x: -1, y: -5}, // Cintura izquierda
+            {x: -2, y: -6}  // Escalón base izquierdo
+        ];
+
+        let currentPointIndex = 0;
+        let foundPoints = [];
+        let isGameOver = false;
+
+        // Variables de dibujado
+        let unit = 0;
+        let originX = 0;
+        let originY = 0;
+        const gridLimit = 9; // Aumentado a 9 para que quepa la copa (de -8 a 8 en Y)
+
+        // Animación de error
+        let errorPoint = null;
+
+        function resizeCanvas() {
+            // Ajustar al ancho de la pantalla
+            const size = Math.min(window.innerWidth - 32, 400);
+            canvas.width = size;
+            canvas.height = size;
+            
+            unit = size / (gridLimit * 2); 
+            originX = size / 2;
+            originY = size / 2;
+            
+            draw();
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+
+        function initGame() {
+            currentPointIndex = 0;
+            foundPoints = [];
+            isGameOver = false;
+            errorPoint = null;
+            restartBtn.style.display = 'none';
+            feedbackDisplay.classList.add('opacity-0');
+            targetDisplay.classList.remove('celebrate', 'text-yellow-500');
+            targetDisplay.classList.add('text-blue-600');
+            
+            updateTargetDisplay();
+            resizeCanvas();
+        }
+
+        function updateTargetDisplay() {
+            const target = shapePoints[currentPointIndex];
+            targetDisplay.textContent = `(${target.x}, ${target.y})`;
+        }
+
+        function drawGrid() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Líneas de cuadrícula
+            ctx.strokeStyle = '#e2e8f0';
+            ctx.lineWidth = 1;
+            for (let i = -gridLimit; i <= gridLimit; i++) {
+                ctx.beginPath(); ctx.moveTo(originX + i * unit, 0); ctx.lineTo(originX + i * unit, canvas.height); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(0, originY - i * unit); ctx.lineTo(canvas.width, originY - i * unit); ctx.stroke();
+            }
+
+            // Ejes Principales
+            ctx.strokeStyle = '#475569';
+            ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(0, originY); ctx.lineTo(canvas.width, originY); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(originX, 0); ctx.lineTo(originX, canvas.height); ctx.stroke();
+
+            // Dibujar flechas
+            const arrowSize = 6;
+            ctx.fillStyle = '#475569';
+            ctx.beginPath(); ctx.moveTo(canvas.width, originY); ctx.lineTo(canvas.width - arrowSize, originY - arrowSize/2); ctx.lineTo(canvas.width - arrowSize, originY + arrowSize/2); ctx.fill();
+            ctx.beginPath(); ctx.moveTo(originX, 0); ctx.lineTo(originX - arrowSize/2, arrowSize); ctx.lineTo(originX + arrowSize/2, arrowSize); ctx.fill();
+
+            // Etiquetas (Mostramos todos los números)
+            ctx.fillStyle = '#64748b';
+            ctx.font = '9px Nunito, sans-serif'; // Letra un poco más pequeña para que quepan todos
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            
+            for (let i = -gridLimit + 1; i < gridLimit; i++) {
+                if (i !== 0) { // Mostrar todos los números (eliminada la restricción de pares)
+                    ctx.fillText(i, originX + i * unit, originY + 12);
+                    ctx.fillText(i, originX - 14, originY - i * unit); // Un poquito más separado del eje Y
+                }
+            }
+            ctx.fillText("0", originX - 8, originY + 12);
+            
+            // Nombres de los ejes
+            ctx.font = 'bold 12px Nunito';
+            ctx.fillStyle = '#334155';
+            ctx.fillText("X", canvas.width - 10, originY - 15);
+            ctx.fillText("Y", originX + 15, 10);
+        }
+
+        function drawLines() {
+            if (foundPoints.length === 0) return;
+
+            // Dorado si gana, Azul mientras juega
+            ctx.strokeStyle = isGameOver ? '#ca8a04' : '#3b82f6'; 
+            ctx.lineWidth = 3;
+            ctx.lineJoin = 'round';
+            ctx.lineCap = 'round';
+            
+            ctx.beginPath();
+            const firstP = getPixelCoords(foundPoints[0].x, foundPoints[0].y);
+            ctx.moveTo(firstP.x, firstP.y);
+
+            for (let i = 1; i < foundPoints.length; i++) {
+                const p = getPixelCoords(foundPoints[i].x, foundPoints[i].y);
+                ctx.lineTo(p.x, p.y);
+            }
+
+            if (isGameOver) {
+                ctx.closePath();
+                // Relleno dorado transparente para la copa
+                ctx.fillStyle = 'rgba(234, 179, 8, 0.4)'; 
+                ctx.fill();
+            }
+            ctx.stroke();
+        }
+
+        function drawPoints() {
+            foundPoints.forEach((pt, index) => {
+                const p = getPixelCoords(pt.x, pt.y);
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+                ctx.fillStyle = isGameOver ? '#a16207' : '#2563eb';
+                ctx.fill();
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+            });
+
+            if (errorPoint && errorPoint.alpha > 0) {
+                const p = getPixelCoords(errorPoint.x, errorPoint.y);
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(239, 68, 68, ${errorPoint.alpha})`;
+                ctx.fill();
+                errorPoint.alpha -= 0.05;
+            }
+        }
+
+        function draw() {
+            drawGrid();
+            drawLines();
+            drawPoints();
+
+            if (errorPoint && errorPoint.alpha > 0) {
+                requestAnimationFrame(draw);
+            }
+        }
+
+        function getPixelCoords(gridX, gridY) {
+            return {
+                x: originX + gridX * unit,
+                y: originY - gridY * unit
+            };
+        }
+
+        function handleInteraction(e) {
+            if (isGameOver) return;
+            e.preventDefault(); 
+
+            let clientX, clientY;
+            if (e.touches && e.touches.length > 0) {
+                clientX = e.touches[0].clientX;
+                clientY = e.touches[0].clientY;
+            } else {
+                clientX = e.clientX;
+                clientY = e.clientY;
+            }
+
+            const rect = canvas.getBoundingClientRect();
+            const clickX = clientX - rect.left;
+            const clickY = clientY - rect.top;
+
+            const gridX = Math.round((clickX - originX) / unit);
+            const gridY = Math.round((originY - clickY) / unit);
+
+            if (gridX < -gridLimit || gridX > gridLimit || gridY < -gridLimit || gridY > gridLimit) return;
+
+            const target = shapePoints[currentPointIndex];
+
+            if (gridX === target.x && gridY === target.y) {
+                foundPoints.push({x: gridX, y: gridY});
+                currentPointIndex++;
+                
+                feedbackDisplay.classList.add('opacity-0');
+                
+                if (currentPointIndex >= shapePoints.length) {
+                    finishGame();
+                } else {
+                    updateTargetDisplay();
+                }
+                draw();
+            } else {
+                showError(gridX, gridY);
+            }
+        }
+
+        function showError(tappedX, tappedY) {
+            errorPoint = {x: tappedX, y: tappedY, alpha: 1.0};
+            feedbackDisplay.textContent = `Tocaste (${tappedX}, ${tappedY}). ¡Revisa los ejes!`;
+            feedbackDisplay.classList.remove('opacity-0');
+            
+            targetDisplay.classList.add('celebrate');
+            setTimeout(() => targetDisplay.classList.remove('celebrate'), 500);
+
+            draw();
+        }
+
+        function finishGame() {
+            isGameOver = true;
+            targetDisplay.classList.remove('text-blue-600');
+            targetDisplay.classList.add('text-yellow-500', 'celebrate');
+            targetDisplay.textContent = "¡ES LA COPA DEL MUNDO!";
+            
+            feedbackDisplay.textContent = "¡Campeones! Excelente trabajo con las coordenadas.";
+            feedbackDisplay.classList.remove('opacity-0', 'text-red-500');
+            feedbackDisplay.style.color = '#047857'; // Verde oscuro
+            
+            restartBtn.style.display = 'block';
+            draw();
+        }
+
+        canvas.addEventListener('mousedown', handleInteraction);
+        canvas.addEventListener('touchstart', handleInteraction, {passive: false});
+
+        window.onload = initGame;
+
+    </script>
+</body>
+</html>
